@@ -17,8 +17,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-var basepath = ""
-
 //go:embed web/template
 var templateFS embed.FS
 
@@ -42,11 +40,9 @@ func main() {
 	if !ok {
 		port = "8080"
 	}
-	basepath, ok := os.LookupEnv("BASE_PATH")
+	basePath, ok := os.LookupEnv("BASE_PATH")
 	if !ok {
-		basepath = ""
-	} else {
-		basepath = "/" + basepath
+		basePath = ""
 	}
 
 	// Set up templates
@@ -73,9 +69,10 @@ func main() {
 
 	// Set up router
 	r := way.NewRouter()
-	r.Handle(http.MethodGet, "/", http.RedirectHandler(basepath+"/buckets", http.StatusPermanentRedirect))
-	r.Handle(http.MethodGet, "/buckets", s3manager.HandleBucketsView(s3, tmplDir, basepath))
-	r.Handle(http.MethodGet, "/buckets/:bucketName", s3manager.HandleBucketView(s3, tmplDir, basepath))
+	baseRedirect := "/" + basePath + "/buckets"
+	r.Handle(http.MethodGet, "/", http.RedirectHandler(baseRedirect, http.StatusPermanentRedirect))
+	r.Handle(http.MethodGet, "/buckets", s3manager.HandleBucketsView(s3, templates, basePath))
+	r.Handle(http.MethodGet, "/buckets/:bucketName", s3manager.HandleBucketView(s3, templates, basePath))
 	r.Handle(http.MethodPost, "/api/buckets", s3manager.HandleCreateBucket(s3))
 	r.Handle(http.MethodDelete, "/api/buckets/:bucketName", s3manager.HandleDeleteBucket(s3))
 	r.Handle(http.MethodPost, "/api/buckets/:bucketName/objects", s3manager.HandleCreateObject(s3))

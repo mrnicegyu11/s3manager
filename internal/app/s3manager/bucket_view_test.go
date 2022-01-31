@@ -137,7 +137,7 @@ func TestHandleBucketView(t *testing.T) {
 
 			templates := os.DirFS(filepath.Join("..", "..", "..", "web", "template"))
 			r := way.NewRouter()
-			r.Handle(http.MethodGet, "/buckets/:bucketName", s3manager.HandleBucketView(s3, templates))
+			r.Handle(http.MethodGet, "/buckets/:bucketName", s3manager.HandleBucketView(s3, templates, ""))
 
 			ts := httptest.NewServer(r)
 			defer ts.Close()
