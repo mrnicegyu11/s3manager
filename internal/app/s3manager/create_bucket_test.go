@@ -2,28 +2,32 @@ package s3manager_test
 
 import (
 	"bytes"
-	"io/ioutil"
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/mastertinner/s3manager/internal/app/s3manager"
-	"github.com/mastertinner/s3manager/internal/app/s3manager/mocks"
+	"github.com/cloudlena/s3manager/internal/app/s3manager"
+	"github.com/cloudlena/s3manager/internal/app/s3manager/mocks"
 	"github.com/matryer/is"
+	"github.com/minio/minio-go/v7"
 )
 
 func TestHandleCreateBucket(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		it                   string
-		makeBucketFunc       func(string, string) error
+		makeBucketFunc       func(context.Context, string, minio.MakeBucketOptions) error
 		body                 string
 		expectedStatusCode   int
 		expectedBodyContains string
 	}{
 		{
 			it: "creates a new bucket",
-			makeBucketFunc: func(string, string) error {
+			makeBucketFunc: func(context.Context, string, minio.MakeBucketOptions) error {
 				return nil
 			},
 			body:                 `{"name":"myBucket"}`,
@@ -32,7 +36,7 @@ func TestHandleCreateBucket(t *testing.T) {
 		},
 		{
 			it: "returns error for empty request",
-			makeBucketFunc: func(string, string) error {
+			makeBucketFunc: func(context.Context, string, minio.MakeBucketOptions) error {
 				return nil
 			},
 			body:                 "",
@@ -41,7 +45,7 @@ func TestHandleCreateBucket(t *testing.T) {
 		},
 		{
 			it: "returns error for malformed request",
-			makeBucketFunc: func(string, string) error {
+			makeBucketFunc: func(context.Context, string, minio.MakeBucketOptions) error {
 				return nil
 			},
 			body:                 "}",
@@ -50,7 +54,7 @@ func TestHandleCreateBucket(t *testing.T) {
 		},
 		{
 			it: "returns error if there is an S3 error",
-			makeBucketFunc: func(string, string) error {
+			makeBucketFunc: func(context.Context, string, minio.MakeBucketOptions) error {
 				return errS3
 			},
 			body:                 `{"name":"myBucket"}`,
@@ -60,7 +64,9 @@ func TestHandleCreateBucket(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.it, func(t *testing.T) {
+			t.Parallel()
 			is := is.New(t)
 
 			s3 := &mocks.S3Mock{
@@ -76,7 +82,7 @@ func TestHandleCreateBucket(t *testing.T) {
 			handler.ServeHTTP(rr, req)
 			resp := rr.Result()
 			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			is.NoErr(err)
 
 			is.Equal(tc.expectedStatusCode, resp.StatusCode)                 // status code

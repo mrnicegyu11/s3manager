@@ -1,27 +1,30 @@
 package s3manager_test
 
 import (
-	"io/ioutil"
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/mastertinner/s3manager/internal/app/s3manager"
-	"github.com/mastertinner/s3manager/internal/app/s3manager/mocks"
+	"github.com/cloudlena/s3manager/internal/app/s3manager"
+	"github.com/cloudlena/s3manager/internal/app/s3manager/mocks"
 	"github.com/matryer/is"
 )
 
 func TestHandleDeleteBucket(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		it                   string
-		removeBucketFunc     func(string) error
+		removeBucketFunc     func(context.Context, string) error
 		expectedStatusCode   int
 		expectedBodyContains string
 	}{
 		{
 			it: "deletes an existing bucket",
-			removeBucketFunc: func(string) error {
+			removeBucketFunc: func(context.Context, string) error {
 				return nil
 			},
 			expectedStatusCode:   http.StatusNoContent,
@@ -29,7 +32,7 @@ func TestHandleDeleteBucket(t *testing.T) {
 		},
 		{
 			it: "returns error if there is an S3 error",
-			removeBucketFunc: func(string) error {
+			removeBucketFunc: func(context.Context, string) error {
 				return errS3
 			},
 			expectedStatusCode:   http.StatusInternalServerError,
@@ -38,7 +41,9 @@ func TestHandleDeleteBucket(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.it, func(t *testing.T) {
+			t.Parallel()
 			is := is.New(t)
 
 			s3 := &mocks.S3Mock{
@@ -54,7 +59,7 @@ func TestHandleDeleteBucket(t *testing.T) {
 			handler.ServeHTTP(rr, req)
 			resp := rr.Result()
 			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			is.NoErr(err)
 
 			is.Equal(tc.expectedStatusCode, resp.StatusCode)                 // status code

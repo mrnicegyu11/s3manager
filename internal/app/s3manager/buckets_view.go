@@ -3,31 +3,40 @@ package s3manager
 import (
 	"fmt"
 	"html/template"
+	"io/fs"
+	"log"
 	"net/http"
-	"path/filepath"
+
+	"github.com/minio/minio-go/v7"
 )
 
 // HandleBucketsView renders all buckets on an HTML page.
-func HandleBucketsView(s3 S3, tmplDir string, basepath string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
-		buckets, err := s3.ListBuckets()
+func HandleBucketsView(s3 S3, templates fs.FS, basePath string) http.HandlerFunc {
+
+	type pageData struct {
+		BasePath string
+		Buckets  []minio.BucketInfo
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		buckets, err := s3.ListBuckets(r.Context())
+		log.Println("basePath:")
+		log.Println(basePath)
 		if err != nil {
 			handleHTTPError(w, fmt.Errorf("error listing buckets: %w", err))
 			return
 		}
+		data := pageData{
+			BasePath: basePath,
+			Buckets:  buckets,
+		}
 
-		l := filepath.Join(tmplDir, "layout.html.tmpl")
-		p := filepath.Join(tmplDir, "buckets.html.tmpl")
-		t, err := template.New("").Funcs(template.FuncMap{
-			"basepath": func() string {
-			  return basepath
-			},
-		  }).ParseFiles(l, p)
+		t, err := template.ParseFS(templates, "layout.html.tmpl", "buckets.html.tmpl")
 		if err != nil {
 			handleHTTPError(w, fmt.Errorf("error parsing template files: %w", err))
 			return
 		}
-		err = t.ExecuteTemplate(w, "layout", buckets)
+		err = t.ExecuteTemplate(w, "layout", data)
 		if err != nil {
 			handleHTTPError(w, fmt.Errorf("error executing template: %w", err))
 			return

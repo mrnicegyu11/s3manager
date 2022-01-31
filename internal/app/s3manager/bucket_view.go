@@ -3,22 +3,23 @@ package s3manager
 import (
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
 	"path"
-	"path/filepath"
 
 	"github.com/matryer/way"
-	minio "github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
 )
 
 // HandleBucketView shows the details page of a bucket.
-func HandleBucketView(s3 S3, tmplDir string, basepath string) http.HandlerFunc {
+func HandleBucketView(s3 S3, templates fs.FS, basePath string) http.HandlerFunc {
 	type objectWithIcon struct {
 		Info minio.ObjectInfo
 		Icon string
 	}
 
 	type pageData struct {
+		BasePath   string
 		BucketName string
 		Objects    []objectWithIcon
 	}
@@ -29,7 +30,7 @@ func HandleBucketView(s3 S3, tmplDir string, basepath string) http.HandlerFunc {
 		var objs []objectWithIcon
 		doneCh := make(chan struct{})
 		defer close(doneCh)
-		objectCh := s3.ListObjectsV2(bucketName, "", true, doneCh)
+		objectCh := s3.ListObjects(r.Context(), bucketName, minio.ListObjectsOptions{})
 		for object := range objectCh {
 			if object.Err != nil {
 				handleHTTPError(w, fmt.Errorf("error listing objects: %w", object.Err))
@@ -39,17 +40,11 @@ func HandleBucketView(s3 S3, tmplDir string, basepath string) http.HandlerFunc {
 			objs = append(objs, obj)
 		}
 		data := pageData{
+			BasePath:   basePath,
 			BucketName: bucketName,
 			Objects:    objs,
 		}
-
-		l := filepath.Join(tmplDir, "layout.html.tmpl")
-		p := filepath.Join(tmplDir, "bucket.html.tmpl")
-		t, err := template.New("").Funcs(template.FuncMap{
-			"basepath": func() string {
-			  return basepath
-			},
-		  }).ParseFiles(l, p)
+		t, err := template.ParseFS(templates, "layout.html.tmpl", "bucket.html.tmpl")
 		if err != nil {
 			handleHTTPError(w, fmt.Errorf("error parsing template files: %w", err))
 			return

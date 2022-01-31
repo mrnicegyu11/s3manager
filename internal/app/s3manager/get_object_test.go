@@ -1,24 +1,27 @@
 package s3manager_test
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/mastertinner/s3manager/internal/app/s3manager"
-	"github.com/mastertinner/s3manager/internal/app/s3manager/mocks"
+	"github.com/cloudlena/s3manager/internal/app/s3manager"
+	"github.com/cloudlena/s3manager/internal/app/s3manager/mocks"
 	"github.com/matryer/is"
 	"github.com/matryer/way"
-	minio "github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
 )
 
 func TestHandleGetObject(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		it                   string
-		getObjectFunc        func(string, string, minio.GetObjectOptions) (*minio.Object, error)
+		getObjectFunc        func(context.Context, string, string, minio.GetObjectOptions) (*minio.Object, error)
 		bucketName           string
 		objectName           string
 		expectedStatusCode   int
@@ -26,7 +29,7 @@ func TestHandleGetObject(t *testing.T) {
 	}{
 		{
 			it: "returns error if there is an S3 error",
-			getObjectFunc: func(string, string, minio.GetObjectOptions) (*minio.Object, error) {
+			getObjectFunc: func(context.Context, string, string, minio.GetObjectOptions) (*minio.Object, error) {
 				return nil, errS3
 			},
 			bucketName:           "testBucket",
@@ -37,7 +40,9 @@ func TestHandleGetObject(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.it, func(t *testing.T) {
+			t.Parallel()
 			is := is.New(t)
 
 			s3 := &mocks.S3Mock{
@@ -53,7 +58,7 @@ func TestHandleGetObject(t *testing.T) {
 			resp, err := http.Get(fmt.Sprintf("%s/buckets/%s/objects/%s", ts.URL, tc.bucketName, tc.objectName))
 			is.NoErr(err)
 			defer resp.Body.Close()
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			is.NoErr(err)
 
 			is.Equal(tc.expectedStatusCode, resp.StatusCode)                 // status code

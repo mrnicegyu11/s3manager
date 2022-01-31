@@ -1,20 +1,26 @@
 package main
 
 import (
+	"crypto/tls"
+	"embed"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
+	"strconv"
 
-	"github.com/mastertinner/adapters/logging"
-	"github.com/mastertinner/s3manager/internal/app/s3manager"
+	"github.com/cloudlena/adapters/logging"
+	"github.com/cloudlena/s3manager/internal/app/s3manager"
 	"github.com/matryer/way"
-	minio "github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 var basepath = ""
+
+//go:embed web/template
+var templateFS embed.FS
 
 func main() {
 	endpoint, ok := os.LookupEnv("ENDPOINT")
@@ -29,11 +35,9 @@ func main() {
 	if !ok {
 		log.Fatal("please provide SECRET_ACCESS_KEY")
 	}
-	useSSLEnvVar, ok := os.LookupEnv("USE_SSL")
-	if !ok {
-		useSSLEnvVar = "true"
-	}
-	useSSL := strings.ToLower(useSSLEnvVar) == "true"
+	region := os.Getenv("REGION")
+	useSSL := getBoolEnvWithDefault("USE_SSL", true)
+	skipSSLVerification := getBoolEnvWithDefault("SKIP_SSL_VERIFICATION", false)
 	port, ok := os.LookupEnv("PORT")
 	if !ok {
 		port = "8080"
@@ -41,21 +45,35 @@ func main() {
 	basepath, ok := os.LookupEnv("BASE_PATH")
 	if !ok {
 		basepath = ""
-	}else{
-		basepath = "/"+basepath
+	} else {
+		basepath = "/" + basepath
 	}
 
-	tmplDir := filepath.Join("web", "template")
+	// Set up templates
+	templates, err := fs.Sub(templateFS, "web/template")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Set up S3 client
-	s3, err := minio.New(endpoint, accessKeyID, secretAccessKey, useSSL)
+	opts := &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
+		Secure: useSSL,
+	}
+	if region != "" {
+		opts.Region = region
+	}
+	if useSSL && skipSSLVerification {
+		opts.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec
+	}
+	s3, err := minio.New(endpoint, opts)
 	if err != nil {
 		log.Fatalln(fmt.Errorf("error creating s3 client: %w", err))
 	}
 
 	// Set up router
 	r := way.NewRouter()
-	r.Handle(http.MethodGet, "/", http.RedirectHandler(basepath + "/buckets", http.StatusPermanentRedirect))
+	r.Handle(http.MethodGet, "/", http.RedirectHandler(basepath+"/buckets", http.StatusPermanentRedirect))
 	r.Handle(http.MethodGet, "/buckets", s3manager.HandleBucketsView(s3, tmplDir, basepath))
 	r.Handle(http.MethodGet, "/buckets/:bucketName", s3manager.HandleBucketView(s3, tmplDir, basepath))
 	r.Handle(http.MethodPost, "/api/buckets", s3manager.HandleCreateBucket(s3))
@@ -66,4 +84,16 @@ func main() {
 
 	lr := logging.Handler(os.Stdout)(r)
 	log.Fatal(http.ListenAndServe(":"+port, lr))
+}
+
+func getBoolEnvWithDefault(name string, defaultValue bool) bool {
+	envValue, ok := os.LookupEnv(name)
+	if !ok {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(envValue)
+	if err != nil {
+		log.Fatalf("invalid value for %s", name)
+	}
+	return value
 }
